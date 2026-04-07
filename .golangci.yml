@@ -1,0 +1,229 @@
+version: "2"
+run:
+  concurrency: 8
+  modules-download-mode: mod
+  issues-exit-code: 1
+  tests: true
+  allow-parallel-runners: false
+output:
+  path-prefix: ""
+linters:
+  default: none
+  enable:
+    - asasalint
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - decorder
+    - dogsled
+    - dupl
+    - errcheck
+    - errchkjson
+    - errorlint
+    - errname
+
+    # needs 'go build' i.e. compile, so it can analyze the artifacts
+    - exhaustive
+    - fatcontext
+    - forbidigo
+    - ginkgolinter
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - goheader
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - govet
+    - grouper
+    - iface
+    - importas
+    - interfacebloat
+    - loggercheck
+    - makezero
+    - ineffassign
+    - misspell
+    - mnd
+    - musttag
+    - nakedret
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - prealloc
+    - predeclared
+    - promlinter
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - staticcheck
+    - thelper
+    - usestdlibvars
+    - usetesting
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+    - cyclop
+    - dupword
+    - funcorder
+    - funlen
+    - gocognit
+    - gocyclo
+    - godot
+    - godox
+    - inamedparam
+    - ireturn
+    - lll
+    - nestif
+    - nilnil
+    - paralleltest
+    - perfsprint
+    - protogetter
+    - revive
+    - tagalign
+    - testifylint
+    - testpackage
+    - wrapcheck
+
+  settings:
+    cyclop:
+      max-complexity: 20
+    mnd:
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+        - "3"
+    varnamelen:
+      ignore-names:
+        - by
+        - db
+        - dg
+        - fn
+        - id
+        - ml
+        - ok
+        - om
+        - sp
+        - tp
+        - tx
+        - wg
+        # noisy edits
+        - f
+        - fg
+        - fs
+        - m
+        - p
+        - s
+        - sd
+        - t
+        - tc
+        - tt
+        - v
+    dupl:
+      threshold: 230
+    errcheck:
+      check-type-assertions: true
+    funlen:
+      lines: 150
+      statements: 50
+      ignore-comments: true
+    gosec:
+      excludes:
+        - G402
+        - G114
+        - G306
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+      settings:
+        shadow:
+          strict: true
+    misspell:
+      ignore-rules:
+        - subjektive
+        - persistente
+        - Konsultation
+        - possibile
+    nakedret:
+      max-func-lines: 0
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation:
+        - funlen
+        - gocognit
+        - lll
+    revive:
+      rules:
+        - name: var-naming
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - godot
+        source: (noinspection|TODO)
+      - linters:
+          - gocritic
+        source: //noinspection
+      - linters:
+          - bodyclose
+          - dupl
+          - errcheck
+          - exhaustive
+          - funlen
+          - gochecknoglobals
+          - goconst
+          - gosec
+          - ireturn
+          - noctx
+          - unparam
+          - wrapcheck
+        path: (_test\.go|test/integration/)
+      - linters:
+          - forbidigo
+        path: (test/integration/)
+      - linters:
+          - exhaustive
+          - funlen
+          - gosec
+          - noctx
+          - unparam
+        path: test_helpers
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: true
+  fix: false
+formatters:
+  enable:
+    - goimports
+    - gofmt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/corticph/copilot-api)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - test_helpers

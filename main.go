@@ -8,9 +8,9 @@ import (
 	"os/exec"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -35,10 +35,15 @@ type Dependency struct {
 type phase int
 
 const (
-	phaseLoading  phase = iota
+	phaseLoading phase = iota
 	phaseSelect
 	phaseUpdating
 	phaseDone
+)
+
+const (
+	ctrlC         = "ctrl+c"
+	progressWidth = 40
 )
 
 type depsLoadedMsg struct {
@@ -101,7 +106,9 @@ func parseDeps(r io.Reader) ([]Dependency, error) {
 	return deps, nil
 }
 
+//nolint:ireturn // return type required by bubbletea tea.Cmd interface
 func loadDepsCmd() tea.Msg {
+	//nolint:noctx // context is not available in bubbletea tea.Msg functions
 	cmd := exec.Command("go", "list", "-json", "-u", "-m", "all")
 	out, err := cmd.Output()
 	if err != nil {
@@ -113,34 +120,36 @@ func loadDepsCmd() tea.Msg {
 
 func updateDepCmd(index int, dep Dependency) tea.Cmd {
 	return func() tea.Msg {
+		//nolint:gosec,noctx // dep.Path is from go list output; context unavailable in tea.Cmd
 		cmd := exec.Command("go", "get", dep.Path+"@"+dep.NewVersion)
 		err := cmd.Run()
 		return depUpdatedMsg{index: index, err: err}
 	}
 }
 
+//nolint:ireturn // return type required by bubbletea tea.Cmd interface
 func tidyCmd() tea.Msg {
+	//nolint:noctx // context is not available in bubbletea tea.Msg functions
 	cmd := exec.Command("go", "mod", "tidy")
 	err := cmd.Run()
 	return tidyDoneMsg{err: err}
 }
 
 var (
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED"))
-	cursorStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED"))
-	checkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981"))
-	uncheckStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
-	pathStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5E7EB"))
-	dimPathStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
-	oldVerStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9CA3AF"))
-	newVerStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981"))
-	arrowStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
-	errorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444"))
-	successStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981"))
-	deprStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B"))
-	hintStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
-	spinnerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7C3AED"))
-	progressStyle = lipgloss.NewStyle().Padding(1, 0)
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED"))
+	cursorStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7C3AED"))
+	checkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981"))
+	uncheckStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
+	pathStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5E7EB"))
+	dimPathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
+	oldVerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#9CA3AF"))
+	newVerStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981"))
+	arrowStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444"))
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981"))
+	deprStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B"))
+	hintStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
+	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#7C3AED"))
 )
 
 func initialModel() model {
@@ -150,7 +159,7 @@ func initialModel() model {
 	)
 	p := progress.New(
 		progress.WithDefaultBlend(),
-		progress.WithWidth(40),
+		progress.WithWidth(progressWidth),
 		progress.WithoutPercentage(),
 	)
 	return model{
@@ -165,6 +174,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, loadDepsCmd)
 }
 
+//nolint:ireturn // implements tea.Model interface
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.phase {
 	case phaseLoading:
@@ -179,10 +189,189 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
+//nolint:gocognit,cyclop,funlen // View complexity is inherent in multi-phase UI rendering
+func (m model) View() tea.View {
+	if m.quitting {
+		return tea.NewView("")
+	}
+
+	var s strings.Builder
+
+	switch m.phase {
+	case phaseLoading:
+		fmt.Fprintf(&s, "\n  %s Checking for dependency updates...\n\n", m.spinner.View())
+
+	case phaseSelect:
+		s.WriteString(titleStyle.Render("  Select dependencies to update"))
+		s.WriteString("\n")
+		s.WriteString(hintStyle.Render("  space: toggle  a: all  enter: confirm  q: quit"))
+		s.WriteString("\n\n")
+
+		selectedCount := 0
+		for _, v := range m.selected {
+			if v {
+				selectedCount++
+			}
+		}
+
+		for i, dep := range m.deps {
+			cursor := "  "
+			if m.cursor == i {
+				cursor = cursorStyle.Render("> ")
+			}
+
+			check := uncheckStyle.Render("[ ]")
+			pStyle := dimPathStyle
+			if m.selected[i] {
+				check = checkStyle.Render("[x]")
+				pStyle = pathStyle
+			}
+
+			paddedPath := fmt.Sprintf("%-*s", m.maxPathLen, dep.Path)
+			line := fmt.Sprintf("%s%s %s  %s %s %s",
+				cursor,
+				check,
+				pStyle.Render(paddedPath),
+				oldVerStyle.Render(dep.Current),
+				arrowStyle.Render("->"),
+				newVerStyle.Render(dep.NewVersion),
+			)
+
+			if dep.Deprecated != "" {
+				line += " " + deprStyle.Render("[DEPRECATED]")
+			}
+
+			s.WriteString(line)
+			s.WriteString("\n")
+		}
+
+		fmt.Fprintf(&s, "\n  %s %d/%d selected\n",
+			hintStyle.Render(""),
+			selectedCount,
+			len(m.deps),
+		)
+
+	case phaseUpdating:
+		total := len(m.updateOrder)
+		done := m.updatePos
+		fmt.Fprintf(&s, "\n  %s Updating dependencies... %d/%d\n",
+			m.spinner.View(), done, total)
+		fmt.Fprintf(&s, "  %s\n\n", m.progress.View())
+
+		for i, idx := range m.updateOrder {
+			dep := m.deps[idx]
+			paddedPath := fmt.Sprintf("%-*s", m.maxPathLen, dep.Path)
+			switch {
+			case i < m.updatePos:
+				// Done
+				status := successStyle.Render("  OK")
+				if m.updateErrs[idx] != "" {
+					status = errorStyle.Render("FAIL")
+				}
+				fmt.Fprintf(&s, "  %s %s  %s %s %s\n",
+					status,
+					pathStyle.Render(paddedPath),
+					oldVerStyle.Render(dep.Current),
+					arrowStyle.Render("->"),
+					newVerStyle.Render(dep.NewVersion),
+				)
+			case i == m.updatePos:
+				// In progress
+				fmt.Fprintf(&s, "  %s %s  %s %s %s\n",
+					m.spinner.View(),
+					pathStyle.Render(paddedPath),
+					oldVerStyle.Render(dep.Current),
+					arrowStyle.Render("->"),
+					newVerStyle.Render(dep.NewVersion),
+				)
+			default:
+				// Pending
+				fmt.Fprintf(&s, "       %s  %s %s %s\n",
+					dimPathStyle.Render(paddedPath),
+					oldVerStyle.Render(dep.Current),
+					arrowStyle.Render("->"),
+					newVerStyle.Render(dep.NewVersion),
+				)
+			}
+		}
+		s.WriteString("\n")
+
+	case phaseDone:
+		if m.err != nil {
+			fmt.Fprintf(&s, "\n  %s %s\n",
+				errorStyle.Render("Error:"),
+				m.err.Error(),
+			)
+			s.WriteString(hintStyle.Render("\n  Press any key to exit.\n\n"))
+			return tea.NewView(s.String())
+		}
+
+		if len(m.deps) == 0 {
+			s.WriteString(successStyle.Render("\n  All dependencies are up to date!\n"))
+			s.WriteString(hintStyle.Render("\n  Press any key to exit.\n\n"))
+			return tea.NewView(s.String())
+		}
+
+		// Show results
+		successCount := 0
+		failCount := 0
+		for _, idx := range m.updateOrder {
+			if m.updateErrs[idx] == "" {
+				successCount++
+			} else {
+				failCount++
+			}
+		}
+
+		if failCount == 0 {
+			s.WriteString(successStyle.Render(fmt.Sprintf("\n  Done! Updated %d dependencies.\n\n", successCount)))
+		} else {
+			fmt.Fprintf(&s, "\n  Done. %s, %s.\n\n",
+				successStyle.Render(fmt.Sprintf("%d updated", successCount)),
+				errorStyle.Render(fmt.Sprintf("%d failed", failCount)),
+			)
+		}
+
+		for _, idx := range m.updateOrder {
+			dep := m.deps[idx]
+			paddedPath := fmt.Sprintf("%-*s", m.maxPathLen, dep.Path)
+			if m.updateErrs[idx] == "" {
+				fmt.Fprintf(&s, "  %s %s  %s %s %s\n",
+					successStyle.Render("  OK"),
+					pathStyle.Render(paddedPath),
+					oldVerStyle.Render(dep.Current),
+					arrowStyle.Render("->"),
+					newVerStyle.Render(dep.NewVersion),
+				)
+			} else {
+				fmt.Fprintf(&s, "  %s %s  %s %s %s\n",
+					errorStyle.Render("FAIL"),
+					pathStyle.Render(paddedPath),
+					oldVerStyle.Render(dep.Current),
+					arrowStyle.Render("->"),
+					newVerStyle.Render(dep.NewVersion),
+				)
+				fmt.Fprintf(&s, "       %s\n", errorStyle.Render(m.updateErrs[idx]))
+			}
+		}
+
+		if m.tidyErr != nil {
+			fmt.Fprintf(&s, "\n  %s go mod tidy: %s\n",
+				errorStyle.Render("Warning:"),
+				m.tidyErr.Error(),
+			)
+		}
+
+		s.WriteString(hintStyle.Render("\n  Press any key to exit.\n\n"))
+	}
+
+	return tea.NewView(s.String())
+}
+
+func (m model) updateLoading(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if msg.String() == "ctrl+c" || msg.String() == "q" {
+		if msg.String() == ctrlC || msg.String() == "q" {
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -213,11 +402,11 @@ func (m model) updateLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
+//nolint:gocognit,nestif // complexity is inherent in keyboard shortcut handling
+func (m model) updateSelect(msg tea.Msg) (model, tea.Cmd) {
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case ctrlC, "q":
 			m.quitting = true
 			return m, tea.Quit
 		case "up", "k":
@@ -274,10 +463,10 @@ func (m model) updateSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateUpdating(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m model) updateUpdating(msg tea.Msg) (model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if msg.String() == "ctrl+c" {
+		if msg.String() == ctrlC {
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -313,190 +502,11 @@ func (m model) updateUpdating(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateDone(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		_ = msg
+func (m model) updateDone(msg tea.Msg) (model, tea.Cmd) {
+	if _, ok := msg.(tea.KeyPressMsg); ok {
 		return m, tea.Quit
 	}
 	return m, nil
-}
-
-func (m model) View() tea.View {
-	if m.quitting {
-		return tea.NewView("")
-	}
-
-	var s strings.Builder
-
-	switch m.phase {
-	case phaseLoading:
-		s.WriteString(fmt.Sprintf("\n  %s Checking for dependency updates...\n\n", m.spinner.View()))
-
-	case phaseSelect:
-		s.WriteString(titleStyle.Render("  Select dependencies to update"))
-		s.WriteString("\n")
-		s.WriteString(hintStyle.Render("  space: toggle  a: all  enter: confirm  q: quit"))
-		s.WriteString("\n\n")
-
-		selectedCount := 0
-		for _, v := range m.selected {
-			if v {
-				selectedCount++
-			}
-		}
-
-		for i, dep := range m.deps {
-			cursor := "  "
-			if m.cursor == i {
-				cursor = cursorStyle.Render("> ")
-			}
-
-			check := uncheckStyle.Render("[ ]")
-			pStyle := dimPathStyle
-			if m.selected[i] {
-				check = checkStyle.Render("[x]")
-				pStyle = pathStyle
-			}
-
-			paddedPath := fmt.Sprintf("%-*s", m.maxPathLen, dep.Path)
-			line := fmt.Sprintf("%s%s %s  %s %s %s",
-				cursor,
-				check,
-				pStyle.Render(paddedPath),
-				oldVerStyle.Render(dep.Current),
-				arrowStyle.Render("->"),
-				newVerStyle.Render(dep.NewVersion),
-			)
-
-			if dep.Deprecated != "" {
-				line += " " + deprStyle.Render("[DEPRECATED]")
-			}
-
-			s.WriteString(line)
-			s.WriteString("\n")
-		}
-
-		s.WriteString(fmt.Sprintf("\n  %s %d/%d selected\n",
-			hintStyle.Render(""),
-			selectedCount,
-			len(m.deps),
-		))
-
-	case phaseUpdating:
-		total := len(m.updateOrder)
-		done := m.updatePos
-		s.WriteString(fmt.Sprintf("\n  %s Updating dependencies... %d/%d\n",
-			m.spinner.View(), done, total))
-		s.WriteString(fmt.Sprintf("  %s\n\n", m.progress.View()))
-
-		for i, idx := range m.updateOrder {
-			dep := m.deps[idx]
-			paddedPath := fmt.Sprintf("%-*s", m.maxPathLen, dep.Path)
-			if i < m.updatePos {
-				// Done
-				status := successStyle.Render("  OK")
-				if m.updateErrs[idx] != "" {
-					status = errorStyle.Render("FAIL")
-				}
-				s.WriteString(fmt.Sprintf("  %s %s  %s %s %s\n",
-					status,
-					pathStyle.Render(paddedPath),
-					oldVerStyle.Render(dep.Current),
-					arrowStyle.Render("->"),
-					newVerStyle.Render(dep.NewVersion),
-				))
-			} else if i == m.updatePos {
-				// In progress
-				s.WriteString(fmt.Sprintf("  %s %s  %s %s %s\n",
-					m.spinner.View(),
-					pathStyle.Render(paddedPath),
-					oldVerStyle.Render(dep.Current),
-					arrowStyle.Render("->"),
-					newVerStyle.Render(dep.NewVersion),
-				))
-			} else {
-				// Pending
-				s.WriteString(fmt.Sprintf("       %s  %s %s %s\n",
-					dimPathStyle.Render(paddedPath),
-					oldVerStyle.Render(dep.Current),
-					arrowStyle.Render("->"),
-					newVerStyle.Render(dep.NewVersion),
-				))
-			}
-		}
-		s.WriteString("\n")
-
-	case phaseDone:
-		if m.err != nil {
-			s.WriteString(fmt.Sprintf("\n  %s %s\n",
-				errorStyle.Render("Error:"),
-				m.err.Error(),
-			))
-			s.WriteString(hintStyle.Render("\n  Press any key to exit.\n\n"))
-			return tea.NewView(s.String())
-		}
-
-		if len(m.deps) == 0 {
-			s.WriteString(successStyle.Render("\n  All dependencies are up to date!\n"))
-			s.WriteString(hintStyle.Render("\n  Press any key to exit.\n\n"))
-			return tea.NewView(s.String())
-		}
-
-		// Show results
-		successCount := 0
-		failCount := 0
-		for _, idx := range m.updateOrder {
-			if m.updateErrs[idx] == "" {
-				successCount++
-			} else {
-				failCount++
-			}
-		}
-
-		if failCount == 0 {
-			s.WriteString(successStyle.Render(fmt.Sprintf("\n  Done! Updated %d dependencies.\n\n", successCount)))
-		} else {
-			s.WriteString(fmt.Sprintf("\n  Done. %s, %s.\n\n",
-				successStyle.Render(fmt.Sprintf("%d updated", successCount)),
-				errorStyle.Render(fmt.Sprintf("%d failed", failCount)),
-			))
-		}
-
-		for _, idx := range m.updateOrder {
-			dep := m.deps[idx]
-			paddedPath := fmt.Sprintf("%-*s", m.maxPathLen, dep.Path)
-			if m.updateErrs[idx] == "" {
-				s.WriteString(fmt.Sprintf("  %s %s  %s %s %s\n",
-					successStyle.Render("  OK"),
-					pathStyle.Render(paddedPath),
-					oldVerStyle.Render(dep.Current),
-					arrowStyle.Render("->"),
-					newVerStyle.Render(dep.NewVersion),
-				))
-			} else {
-				s.WriteString(fmt.Sprintf("  %s %s  %s %s %s\n",
-					errorStyle.Render("FAIL"),
-					pathStyle.Render(paddedPath),
-					oldVerStyle.Render(dep.Current),
-					arrowStyle.Render("->"),
-					newVerStyle.Render(dep.NewVersion),
-				))
-				s.WriteString(fmt.Sprintf("       %s\n", errorStyle.Render(m.updateErrs[idx])))
-			}
-		}
-
-		if m.tidyErr != nil {
-			s.WriteString(fmt.Sprintf("\n  %s go mod tidy: %s\n",
-				errorStyle.Render("Warning:"),
-				m.tidyErr.Error(),
-			))
-		}
-
-		s.WriteString(hintStyle.Render("\n  Press any key to exit.\n\n"))
-	}
-
-	return tea.NewView(s.String())
 }
 
 func main() {

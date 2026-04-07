@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,12 +9,16 @@ import (
 )
 
 func TestParseDeps(t *testing.T) {
+	t.Parallel()
+
 	input := `
 {"Path":"mymod","Version":"v0.0.0","Main":true}
 {"Path":"github.com/foo/bar","Version":"v1.2.3","Update":{"Path":"github.com/foo/bar","Version":"v1.4.0"}}
-{"Path":"github.com/baz/qux","Version":"v0.3.1","Update":{"Path":"github.com/baz/qux","Version":"v1.0.0"},"Indirect":true}
+{"Path":"github.com/baz/qux","Version":"v0.3.1",
+ "Update":{"Path":"github.com/baz/qux","Version":"v1.0.0"},"Indirect":true}
 {"Path":"github.com/direct/nodep","Version":"v2.0.0"}
-{"Path":"github.com/has/update","Version":"v0.1.0","Update":{"Path":"github.com/has/update","Version":"v0.2.0"},"Deprecated":"use something else"}
+{"Path":"github.com/has/update","Version":"v0.1.0",
+ "Update":{"Path":"github.com/has/update","Version":"v0.2.0"},"Deprecated":"use something else"}
 `
 	deps, err := parseDeps(strings.NewReader(input))
 	if err != nil {
@@ -46,6 +50,8 @@ func TestParseDeps(t *testing.T) {
 }
 
 func TestParseDepsEmpty(t *testing.T) {
+	t.Parallel()
+
 	deps, err := parseDeps(strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,6 +62,8 @@ func TestParseDepsEmpty(t *testing.T) {
 }
 
 func TestParseDepsNoUpdates(t *testing.T) {
+	t.Parallel()
+
 	input := `{"Path":"mymod","Version":"v0.0.0","Main":true}
 {"Path":"github.com/foo/bar","Version":"v1.2.3"}
 `
@@ -69,6 +77,8 @@ func TestParseDepsNoUpdates(t *testing.T) {
 }
 
 func TestParseDepsMalformed(t *testing.T) {
+	t.Parallel()
+
 	input := `{"Path":"ok","Version":"v1.0.0"}
 not json at all
 `
@@ -79,6 +89,8 @@ not json at all
 }
 
 func TestToggleSelection(t *testing.T) {
+	t.Parallel()
+
 	m := initialModel()
 	m.phase = phaseSelect
 	m.deps = []Dependency{
@@ -121,6 +133,8 @@ func TestToggleSelection(t *testing.T) {
 }
 
 func TestCursorMovement(t *testing.T) {
+	t.Parallel()
+
 	m := initialModel()
 	m.phase = phaseSelect
 	m.deps = []Dependency{
@@ -163,6 +177,8 @@ func TestCursorMovement(t *testing.T) {
 }
 
 func TestUpdateSequencing(t *testing.T) {
+	t.Parallel()
+
 	m := initialModel()
 	m.phase = phaseUpdating
 	m.deps = []Dependency{
@@ -209,6 +225,8 @@ func TestUpdateSequencing(t *testing.T) {
 }
 
 func TestUpdateWithErrors(t *testing.T) {
+	t.Parallel()
+
 	m := initialModel()
 	m.phase = phaseUpdating
 	m.deps = []Dependency{
@@ -219,7 +237,7 @@ func TestUpdateWithErrors(t *testing.T) {
 	m.updateErrs = make([]string, 1)
 
 	// Dep fails
-	result, _ := m.Update(depUpdatedMsg{index: 0, err: fmt.Errorf("network error")})
+	result, _ := m.Update(depUpdatedMsg{index: 0, err: errors.New("network error")})
 	m = result.(model)
 	if m.updateErrs[0] != "network error" {
 		t.Errorf("updateErrs[0] = %q, want 'network error'", m.updateErrs[0])
@@ -227,6 +245,8 @@ func TestUpdateWithErrors(t *testing.T) {
 }
 
 func TestEnterWithNoSelection(t *testing.T) {
+	t.Parallel()
+
 	m := initialModel()
 	m.phase = phaseSelect
 	m.deps = []Dependency{
