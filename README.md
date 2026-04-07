@@ -7,7 +7,7 @@ Interactive TUI for updating Go module dependencies. Lists all direct dependenci
 ### Go install
 
 ```bash
-go install albe2669/go-upgrade@latest
+go install github.com/albe2669/go-upgrade@latest
 ```
 
 ### Binary releases
