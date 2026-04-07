@@ -29,3 +29,10 @@ changelog:
       - "^docs:"
       - "^ci:"
       - "^chore:"
+
+release:
+  github:
+    owner: albe2669
+    name: go-upgrade
+
+  draft: false
