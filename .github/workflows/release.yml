@@ -2,19 +2,25 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [master]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  bump-version:
     runs-on: ubuntu-latest
+    name: "Bump version and create changelog with commitizen"
     steps:
-      - uses: actions/checkout@v6
+      - name: Check out
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Create bump and changelog
+        uses: commitizen-tools/commitizen-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-go@v6
         with:
