@@ -1,4 +1,4 @@
-module go-upgrade
+module albe2669/go-upgrade
 
 go 1.26.1
 

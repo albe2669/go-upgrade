@@ -7,12 +7,12 @@ Interactive TUI for updating Go module dependencies. Lists all direct dependenci
 ### Go install
 
 ```bash
-go install go-upgrade@latest
+go install albe2669/go-upgrade@latest
 ```
 
 ### Binary releases
 
-Download pre-built binaries from the [Releases](https://github.com/arn/go-upgrade/releases) page.
+Download pre-built binaries from the [Releases](https://github.com/albe2669/go-upgrade/releases) page.
 
 ## Usage
 
@@ -43,7 +43,7 @@ The tool will:
 ## Building from source
 
 ```bash
-git clone https://github.com/arn/go-upgrade.git
+git clone https://github.com/albe2669/go-upgrade.git
 cd go-upgrade
 go build -o go-upgrade .
 ```
