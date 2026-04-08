@@ -1,6 +1,6 @@
 # go-upgrade
 
-Interactive TUI for updating Go module dependencies. Lists all direct dependencies with available updates, lets you select which to upgrade, and runs the updates with a progress bar.
+Interactive TUI for updating Go module dependencies. Lists all dependencies declared in your `go.mod` (both direct and indirect) that have available updates, lets you select which to upgrade, and runs the updates with a progress bar.
 
 ## Installation
 
@@ -24,7 +24,7 @@ go-upgrade
 
 The tool will:
 
-1. Scan for outdated direct dependencies
+1. Scan for outdated dependencies declared in `go.mod` (direct and indirect)
 2. Present an interactive selection list
 3. Update selected dependencies
 4. Run `go mod tidy`
