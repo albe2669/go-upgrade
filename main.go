@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"golang.org/x/mod/modfile"
 )
 
 // goModule represents the JSON output of `go list -json -u -m all`.
@@ -81,8 +82,10 @@ type model struct {
 }
 
 // parseDeps parses concatenated JSON objects from `go list -json -u -m all`
-// and returns only direct dependencies with available updates.
-func parseDeps(r io.Reader) ([]Dependency, error) {
+// and returns dependencies with available updates. If inMod is non-empty,
+// only modules listed in go.mod (direct or indirect) are included, which
+// allows indirect deps explicitly listed in go.mod to be updated.
+func parseDeps(r io.Reader, inMod map[string]bool) ([]Dependency, error) {
 	dec := json.NewDecoder(r)
 	var deps []Dependency
 	for {
@@ -93,7 +96,10 @@ func parseDeps(r io.Reader) ([]Dependency, error) {
 			}
 			return nil, fmt.Errorf("parsing module JSON: %w", err)
 		}
-		if m.Main || m.Indirect || m.Update == nil {
+		if m.Main || m.Update == nil {
+			continue
+		}
+		if len(inMod) > 0 && !inMod[m.Path] {
 			continue
 		}
 		deps = append(deps, Dependency{
@@ -108,13 +114,26 @@ func parseDeps(r io.Reader) ([]Dependency, error) {
 
 //nolint:ireturn // return type required by bubbletea tea.Cmd interface
 func loadDepsCmd() tea.Msg {
+	data, err := os.ReadFile("go.mod")
+	if err != nil {
+		return depsLoadedMsg{err: fmt.Errorf("reading go.mod: %w", err)}
+	}
+	f, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return depsLoadedMsg{err: fmt.Errorf("parsing go.mod: %w", err)}
+	}
+	inMod := make(map[string]bool, len(f.Require))
+	for _, req := range f.Require {
+		inMod[req.Mod.Path] = true
+	}
+
 	//nolint:noctx // context is not available in bubbletea tea.Msg functions
 	cmd := exec.Command("go", "list", "-json", "-u", "-m", "all")
 	out, err := cmd.Output()
 	if err != nil {
 		return depsLoadedMsg{err: fmt.Errorf("go list: %w", err)}
 	}
-	deps, err := parseDeps(strings.NewReader(string(out)))
+	deps, err := parseDeps(strings.NewReader(string(out)), inMod)
 	return depsLoadedMsg{deps: deps, err: err}
 }
 

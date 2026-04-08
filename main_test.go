@@ -20,13 +20,22 @@ func TestParseDeps(t *testing.T) {
 {"Path":"github.com/has/update","Version":"v0.1.0",
  "Update":{"Path":"github.com/has/update","Version":"v0.2.0"},"Deprecated":"use something else"}
 `
-	deps, err := parseDeps(strings.NewReader(input))
+	// inMod includes both direct and the indirect dep — simulates go.mod listing both.
+	// github.com/direct/nodep is listed but has no update, so it won't appear.
+	// mymod is the main module and is always skipped.
+	inMod := map[string]bool{
+		"github.com/foo/bar":    true,
+		"github.com/baz/qux":   true,
+		"github.com/direct/nodep": true,
+		"github.com/has/update": true,
+	}
+	deps, err := parseDeps(strings.NewReader(input), inMod)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(deps) != 2 {
-		t.Fatalf("expected 2 deps, got %d", len(deps))
+	if len(deps) != 3 {
+		t.Fatalf("expected 3 deps, got %d", len(deps))
 	}
 
 	// First: foo/bar (direct, has update)
@@ -40,19 +49,50 @@ func TestParseDeps(t *testing.T) {
 		t.Errorf("deps[0].NewVersion = %q, want v1.4.0", deps[0].NewVersion)
 	}
 
-	// Second: has/update (direct, has update, deprecated)
-	if deps[1].Path != "github.com/has/update" {
-		t.Errorf("deps[1].Path = %q, want github.com/has/update", deps[1].Path)
+	// Second: baz/qux (indirect but listed in go.mod, has update)
+	if deps[1].Path != "github.com/baz/qux" {
+		t.Errorf("deps[1].Path = %q, want github.com/baz/qux", deps[1].Path)
 	}
-	if deps[1].Deprecated != "use something else" {
-		t.Errorf("deps[1].Deprecated = %q, want 'use something else'", deps[1].Deprecated)
+	if deps[1].NewVersion != "v1.0.0" {
+		t.Errorf("deps[1].NewVersion = %q, want v1.0.0", deps[1].NewVersion)
+	}
+
+	// Third: has/update (direct, has update, deprecated)
+	if deps[2].Path != "github.com/has/update" {
+		t.Errorf("deps[2].Path = %q, want github.com/has/update", deps[2].Path)
+	}
+	if deps[2].Deprecated != "use something else" {
+		t.Errorf("deps[2].Deprecated = %q, want 'use something else'", deps[2].Deprecated)
+	}
+}
+
+func TestParseDepsIndirectNotInMod(t *testing.T) {
+	t.Parallel()
+
+	input := `
+{"Path":"github.com/foo/bar","Version":"v1.2.3","Update":{"Path":"github.com/foo/bar","Version":"v1.4.0"}}
+{"Path":"github.com/baz/qux","Version":"v0.3.1","Update":{"Path":"github.com/baz/qux","Version":"v1.0.0"},"Indirect":true}
+`
+	// inMod only contains foo/bar — baz/qux is transitive and not in go.mod.
+	inMod := map[string]bool{
+		"github.com/foo/bar": true,
+	}
+	deps, err := parseDeps(strings.NewReader(input), inMod)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(deps) != 1 {
+		t.Fatalf("expected 1 dep, got %d", len(deps))
+	}
+	if deps[0].Path != "github.com/foo/bar" {
+		t.Errorf("deps[0].Path = %q, want github.com/foo/bar", deps[0].Path)
 	}
 }
 
 func TestParseDepsEmpty(t *testing.T) {
 	t.Parallel()
 
-	deps, err := parseDeps(strings.NewReader(""))
+	deps, err := parseDeps(strings.NewReader(""), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,7 +107,7 @@ func TestParseDepsNoUpdates(t *testing.T) {
 	input := `{"Path":"mymod","Version":"v0.0.0","Main":true}
 {"Path":"github.com/foo/bar","Version":"v1.2.3"}
 `
-	deps, err := parseDeps(strings.NewReader(input))
+	deps, err := parseDeps(strings.NewReader(input), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -82,7 +122,7 @@ func TestParseDepsMalformed(t *testing.T) {
 	input := `{"Path":"ok","Version":"v1.0.0"}
 not json at all
 `
-	_, err := parseDeps(strings.NewReader(input))
+	_, err := parseDeps(strings.NewReader(input), nil)
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
