@@ -1,3 +1,9 @@
+## v0.2.0 (2026-04-08)
+
+### Feat
+
+- also support indirect dependencies
+
 ## v0.1.2 (2026-04-07)
 
 ### Fix
